@@ -1,61 +1,97 @@
 import { defineStore } from "pinia";
-export const useStoreNotes = defineStore('storeNotes', {
+import {
+  collection,
+  onSnapshot,
+  doc,
+  deleteDoc,
+  updateDoc,
+  query,
+  orderBy,
+  limit,
+  addDoc,
+} from "firebase/firestore";
+import { db } from "@/js/firebase";
+import { useStoreAuth } from "@/stores/storeAuth";
+
+let notesCollectrionRef;
+let notesCollectrionQuery;
+let getNotesSnapshot = null;
+export const useStoreNotes = defineStore("storeNotes", {
   state: () => ({
-    notes: [
-      {
-        id: 'id1',
-        content: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus nec    iaculis mauris.'
-      },
-      {
-        id: 'id2',
-        content: 'This short note!.'
-      }
-    ]
+    notes: [],
+    notesLoaded: false,
   }),
   actions: {
-    addNote(newNote) {
-      let date = new Date().getTime(),
-          id = date.toString()
-      let note = {
-        id,
+    init() {
+      // initialize our database refs
+      const storeAuth = useStoreAuth();
+
+      notesCollectrionRef = collection(db, "users", storeAuth.user.id, "notes");
+      notesCollectrionQuery = query(
+        notesCollectrionRef,
+        orderBy("date", "desc")
+      );
+      this.getNotes();
+    },
+    async getNotes() {
+      this.notesLoaded = true;
+
+      console.log(this.notesLoaded);
+      getNotesSnapshot = onSnapshot(notesCollectrionQuery, (querySnapshot) => {
+        let notes = [];
+        querySnapshot.forEach((doc) => {
+          let note = {
+            id: doc.id,
+            content: doc.data().content,
+            date: doc.data().date,
+          };
+          notes.push(note);
+        });
+        this.notes = notes;
+        this.notesLoaded = false;
+        this.notes = notes;
+      });
+    },
+    clearNotes() {
+      this.notes = [];
+      if (getNotesSnapshot) getNotesSnapshot(); //
+    },
+    async addNote(newNote) {
+      let currentDate = new Date().getTime(),
+        date = currentDate.toString();
+      await addDoc(notesCollectrionRef, {
         content: newNote,
-      }
-      this.notes.unshift(note)
+        date,
+      });
+      // this.notes.unshift(note);
     },
-    deleteNote (id) {
-      this.notes = this.notes.filter((note) => {
-        return note.id !== id
-      })
+    async deleteNote(id) {
+      console.log(`id - ${id}`);
+      await deleteDoc(doc(notesCollectrionRef, id));
     },
-    updateNote (id, content) {
-      let index = this.notes.findIndex(note => {
-        return note.id === id
-      })
-      this.notes[index].content = content
-    }
+    async updateNote(id, content) {
+      await updateDoc(doc(notesCollectrionRef, id), {
+        content,
+      });
+    },
   },
   getters: {
     getNoteContent: (state) => {
       return (id) => {
         console.log(id);
-        return state.notes.filter( (note) => {
-          return note.id === id
-        })[0].content
-      }
+        console.log(state.notes);
+        return state.notes.filter((note) => note.id === id)[0].content;
+      };
     },
     totalNotesCount: (state) => {
-      return state.notes.length
+      return state.notes.length;
     },
     totalCharactersCount: (state) => {
-      let count = 0
-      state.notes.forEach( (note) => {
-        count += note.content.length
-      })
-      return count
-    }
-  }
-})
-
-
-
-
+      let count = 0;
+      state.notes.forEach((note) => {
+        count += note.content.length;
+      });
+      return count;
+    },
+  },
+});
